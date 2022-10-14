@@ -2,7 +2,7 @@
 # The devcontainer should run as root and use user-mode podman or
 # docker with user namespaces.
 
-FROM python:3.9
+FROM python:3.10.0
 
 RUN apt-get update && apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
