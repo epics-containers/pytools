@@ -15,10 +15,14 @@
 #   PUSH: if true, push the container image to the registry
 #
 
-# setup a buildx driver
+# setup a buildx driver for multi-arch / remote cached builds
 # NOTE: if you have docker aliased to podman this line will fail but the
 # rest of the script will run as podman does not need to create a context
-docker buildx create --use 2> /dev/null
+(
+    set -x
+    docker buildx create --driver docker-container --use
+    docker buildx version
+)
 
 set -e
 
@@ -32,25 +36,36 @@ if [[ -z ${REPOSITORY} ]] ; then
     echo "inferred registry ${REPOSITORY}"
 fi
 
-cachefrom="--cache-from=${REPOSITORY}"
-cacheto="--cache-to=${REPOSITORY}"
+if docker -v | grep podman ; then
+    cachefrom="--cache-from=${REPOSITORY}"
+    cacheto="--cache-to=${REPOSITORY}"
+else
+    cachefrom="--cache-from=type=registry,ref=${REPOSITORY}"
+    cacheto="--cache-to=type=registry,ref=${REPOSITORY},mode=max"
+fi
 
-prep_args() {
+do_build() {
     ARCHITECTURE=$1
     TARGET=$2
+    shift 2
 
     image_name=${REPOSITORY}-${ARCHITECTURE}-${TARGET}:${TAG}
     args="
         --build-arg TARGET_ARCHITECTURE=${ARCHITECTURE}
         --target ${TARGET}
-        -t ${image_name} .
+        -t ${image_name}
     "
 
     if [[ ${PUSH} == "true" ]] ; then
         args="--push "${args}
     fi
 
-    echo "CONTAINER BUILD FOR ${image_name} with ARCHITECTURE=${ARCHITECTURE}..."
+    echo "CONTAINER BUILD FOR ${image_name} with ARCHITECTURE=${ARCHITECTURE} ..."
+
+    (
+        set -x
+        docker buildx build ${args} ${*} .
+    )
 }
 
 # EDIT BELOW FOR YOUR BUILD MATRIX REQUIREMENTS
@@ -58,13 +73,13 @@ prep_args() {
 # All builds should use cachefrom and the last should use cacheto
 # The last build should execute all stages for the cache to be fully useful.
 #
+# intermediate builds should use cachefrom but will also see the local cache
+#
 # If None of the builds use all stages in the Dockerfile then consider adding
 # cache-to to more than one build. But note there is a tradeoff in performance
 # as every layer will get uploaded to the cache even if it just came out of the
 # cache.
 
-prep_args linux developer
-docker buildx build ${cachefrom} ${args}
+do_build linux developer ${cachefrom}
+do_build linux runtime ${cachefrom} ${cacheto}
 
-prep_args linux runtime
-docker buildx build ${cachefrom} ${cacheto} ${args}
