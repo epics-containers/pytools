@@ -2,26 +2,27 @@
 
 # A script for building EPICS container images
 #
-# Note that this is done in bash to make it portable between
+# Note that this is implemented in bash to make it portable between
 # CI frameworks. This approach uses the minimum of GitHub Actions
-# features. It is also intended to work locally for testing outside
-# of CI.
+# and also works locally for testing outside of CI.
 #
 # PREREQUISITES: the caller should be authenticated to the
-# container registry for push (when PUSH is true)
+# container registry with the appropriate permissions to push
 #
-
+# INPUTS:
+#   REPOSITORY: the container registry to push to
+#   TAG: the tag to use for the container image
+#   PUSH: if true, push the container image to the registry
+#
 
 # setup a buildx driver
 # NOTE: if you have docker aliased to podman this line will fail but the
 # rest of the script will run as podman does not need to create a context
-docker buildx create --use
+docker buildx create --use 2> /dev/null
 
 set -e
 
 # Provide some defaults for the controlling Environment Variables.
-# Currently upported ARCHTECTURES are linux rtems
-ARCHITECTURES=${ARCHITECTURES:-linux}
 PUSH=${PUSH:-false}
 TAG=${TAG:-latest}
 
@@ -31,20 +32,39 @@ if [[ -z ${REPOSITORY} ]] ; then
     echo "inferred registry ${REPOSITORY}"
 fi
 
-for ARCHITECTURE in ${ARCHITECTURES}; do
-    for TARGET in developer runtime; do
+cachefrom="--cache-from=${REPOSITORY}"
+cacheto="--cache-to=${REPOSITORY}"
 
-        image_name=${REPOSITORY}-${ARCHITECTURE}-${TARGET}:${TAG}
-        args="--build-arg TARGET_ARCHITECTURE=${ARCHITECTURE} --target ${TARGET} -t ${image_name} ."
+prep_args() {
+    ARCHITECTURE=$1
+    TARGET=$2
 
-        echo "BUILDING ${image_name} ..."
+    image_name=${REPOSITORY}-${ARCHITECTURE}-${TARGET}:${TAG}
+    args="
+        --build-arg TARGET_ARCHITECTURE=${ARCHITECTURE}
+        --target ${TARGET}
+        -t ${image_name} .
+    "
 
-        if [[ ${PUSH} == "true" ]] ; then
-            args="--push ${image_name} "${args}
-        fi
+    if [[ ${PUSH} == "true" ]] ; then
+        args="--push "${args}
+    fi
 
-        docker buildx build --cache-from=${REPOSITORY} --cache-to=${REPOSITORY}  ${args}
-    done
-done
+    echo "CONTAINER BUILD FOR ${image_name} with ARCHITECTURE=${ARCHITECTURE}..."
+}
 
+# EDIT BELOW FOR YOUR BUILD MATRIX REQUIREMENTS
+#
+# All builds should use cachefrom and the last should use cacheto
+# The last build should execute all stages for the cache to be fully useful.
+#
+# If None of the builds use all stages in the Dockerfile then consider adding
+# cache-to to more than one build. But note there is a tradeoff in performance
+# as every layer will get uploaded to the cache even if it just came out of the
+# cache.
 
+prep_args linux developer
+docker buildx build ${cachefrom} ${args}
+
+prep_args linux runtime
+docker buildx build ${cachefrom} ${cacheto} ${args}
