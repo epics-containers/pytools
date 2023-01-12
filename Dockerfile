@@ -2,7 +2,7 @@
 # The devcontainer should run as root and use user-mode podman or
 # docker with user namespaces.
 
-FROM python:3.9 as environment
+FROM python:3.10 as environment
 
 ENV VIRTUALENV=/venv
 ENV PATH=${VIRTUALENV}:${PATH}

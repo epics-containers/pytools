@@ -36,7 +36,7 @@ else
     docker buildx create --driver docker-container --use
     # docker command line parameters
     cachefrom=--cache-from=type=local,src=${CACHE}
-    cacheto=--cache-to=type=local,dest=${NEWCACHE}
+    cacheto=--cache-to=type=local,dest=${NEWCACHE},mode=max
 fi
 
 # login to the container registry
